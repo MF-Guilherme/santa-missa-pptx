@@ -18,13 +18,14 @@ def find_lyrics(playlist):
         response = requests.get(url)
         if response.status_code == 200:
             data = response.json()
+            # print(data)
             if 'mus' in data:
                 music_id = data['mus'][0]['id']
                 letra = data['mus'][0]['text']
-                with open("lista_com_id.txt", "r") as lista_id:
+                with open("lista_com_id.csv", "r") as lista_id:
                     content = lista_id.read()
                 if music_id not in content:
-                    with open("lista_com_id.txt", "a") as id_list:
+                    with open("lista_com_id.csv", "a") as id_list:
                         id_list.write(f"{music[0]}, {music[1]}, {music_id}\n")
             else:
                 print("Letra não encontrada.")
