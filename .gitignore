@@ -164,5 +164,9 @@ cython_debug/
 #listas
 .csv
 
+#apresentações teste
+.~lock.apresentacao_letras.pptx#
+apresentacao_letras.pptx
+
 #testes
 tests.py

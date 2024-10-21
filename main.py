@@ -44,15 +44,6 @@ def get_lyric_by_scraping(artist, music_name):
         except Exception as e:
             return f"Error:{str(e)}"
 
-def get_playlist():
-    with open('musicas.csv', "r") as file:
-        playlist = []
-        for music in file:
-            music = music.strip("\n")
-            music_name, artist_name = music.split(", ")
-            playlist.append((music_name, artist_name))
-        return playlist
-
 def find_lyrics_on_vagalume(playlist):
     for music in tqdm(playlist, desc="Processando músicas", ncols=100):
         url = f"https://api.vagalume.com.br/search.php?art={music[1]}&mus={music[0]}&apikey={api_key_vagalume}"
@@ -75,6 +66,23 @@ def find_lyrics_on_vagalume(playlist):
         else:
             print("Erro ao fazer requisição.")
 
+def get_playlist():
+    with open('musicas.csv', "r") as file:
+        playlist = []
+        for music in file:
+            music = music.strip("\n")
+            music_name, artist_name = music.split(", ")
+            playlist.append((music_name, artist_name))
+        return playlist
+
+def get_lyrics_localy():
+    lyrics_list = []
+    with open('lista_com_id.csv', 'r') as arquivo:
+        for i in arquivo.readlines():
+            music, artist, music_id, lyric = i.split(';')
+            lyric = lyric.replace(' | ', '\n')
+            lyrics_list.append(lyric)
+        return lyrics_list
 
 if __name__ == '__main__':
     playlist = get_playlist()
