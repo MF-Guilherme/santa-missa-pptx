@@ -1,4 +1,8 @@
 import requests, os
+import csv
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -8,9 +12,56 @@ from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
+
 api_key_vagalume = os.getenv("KEY_VAGALUME")
 
-def get_lyric_by_scraping(artist, music_name):
+def get_lyrics():
+
+    lyrics_list = []
+    with open('musicas.csv', 'r') as input_musics:
+        lines = input_musics.readlines()
+        for line in tqdm(lines, total=len(lines), desc="Processando as letras"):
+            music, artist_uf = line.split(';')
+            artist = artist_uf.replace('\n', '')
+            local_lyric = get_lyric_local(music, artist)
+            if local_lyric:
+                lyrics_list.append(local_lyric)
+            else:
+                api_lyric = get_lyrics_on_vagalume_api(music, artist)
+                if api_lyric:
+                    lyrics_list.append(api_lyric)
+                else:
+                    scrapping_lyric = get_lyric_by_scraping(music, artist)
+                    if scrapping_lyric:
+                        lyrics_list.append(scrapping_lyric)
+                    else:
+                        lyrics_list.append(f'Música {music} do artista {artist} não encontrada')
+    return lyrics_list
+
+def get_lyric_local(music, artist):
+    with open('lista_com_id.csv', 'r') as local_list:
+        for line in local_list.readlines():
+            music_name, artist_name, lyric = line.split(';')
+            if music == music_name and artist == artist_name:
+                return lyric
+
+def get_lyrics_on_vagalume_api(music, artist):
+    url = f"https://api.vagalume.com.br/search.php?art={artist}&mus={music}&apikey={api_key_vagalume}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        # print(data)
+        if 'mus' in data:
+            lyric = data['mus'][0]['text']
+            formated_lyric = lyric.replace('\n', ' | ')
+            with open("lista_com_id.csv", "a", newline='') as local_list:
+                writer = csv.writer(local_list, delimiter=';')
+                row = [music, artist, formated_lyric]
+                writer.writerow(row)
+            return formated_lyric
+    return None
+
+def get_lyric_by_scraping(music_name, artist):
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Executa o Chrome em modo invisível (sem interface gráfica)
     service = Service(executable_path='/usr/local/bin/chromedriver')
@@ -36,55 +87,87 @@ def get_lyric_by_scraping(artist, music_name):
             soup = BeautifulSoup(result.get_attribute('outerHTML'), 'html.parser')
             lyric = soup.get_text(separator=" | ").strip()
             if lyric:
-                with open("lista_com_id.csv", "a") as id_list:
-                    id_list.write(f"{music_name}; {artist}; ID não encontrado; {lyric}\n")
+                with open("lista_com_id.csv", "a", newline='') as local_list:
+                    writer = csv.writer(local_list, delimiter=';')
+                    row = [music_name, artist, lyric]
+                    writer.writerow(row)
+                return lyric
             else:
                 with open("lista_com_id.csv", "a") as id_list:
-                    id_list.write(f"{music_name}; {artist}; ID não encontrado; Não encontrado no letras.mus\n")
+                    id_list.write(f"{music_name};{artist};Letra não encontrada no letras.mus\n")
+                    return None
         except Exception as e:
             return f"Error:{str(e)}"
 
-def find_lyrics_on_vagalume(playlist):
-    for music in tqdm(playlist, desc="Processando músicas", ncols=100):
-        url = f"https://api.vagalume.com.br/search.php?art={music[1]}&mus={music[0]}&apikey={api_key_vagalume}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            # print(data)
-            if 'mus' in data:
-                music_id = data['mus'][0]['id']
-                lyric = data['mus'][0]['text']
-                formated_lyric = lyric.replace('\n', ' | ')
-                with open("lista_com_id.csv", "r") as lista_id:
-                    content = lista_id.read()
-                if music_id not in content:
-                    with open("lista_com_id.csv", "a") as id_list:
-                        id_list.write(f"{music[0]}; {music[1]}; {music_id}; {formated_lyric}\n")
-            else:
-                #TODO: validação para não adicionar de novo se já tiver música e artista cadastrados
-                get_lyric_by_scraping(music[1], music[0])
+# Função para dividir o texto em múltiplos slides de até 300 caracteres por slide
+def split_lyric_into_slides(lyrics, max_chars=300):
+    slides = []
+    current_slide = ""
+    words = lyrics.split()
+
+    for word in words:
+        # Adiciona o próximo trecho ao slide atual
+        if len(current_slide) + len(word) + 1 <= max_chars:
+            current_slide += " " + word
         else:
-            print("Erro ao fazer requisição.")
+            # Insere os " | " de volta antes de adicionar o slide à lista
+            slides.append(current_slide.strip() + " | ")
+            current_slide = word
 
-def get_playlist():
-    with open('musicas.csv', "r") as file:
-        playlist = []
-        for music in file:
-            music = music.strip("\n")
-            music_name, artist_name = music.split(", ")
-            playlist.append((music_name, artist_name))
-        return playlist
+    # Adiciona o último slide se houver conteúdo restante
+    if current_slide:
+        slides.append(current_slide.strip() + " | ")
 
-def get_lyrics_localy():
-    lyrics_list = []
-    with open('lista_com_id.csv', 'r') as arquivo:
-        for i in arquivo.readlines():
-            music, artist, music_id, lyric = i.split(';')
-            lyric = lyric.replace(' | ', '\n')
-            lyrics_list.append(lyric)
-        return lyrics_list
+    return slides
+
+# Função para criar a apresentação PPTX
+def create_presentation_with_format(lyrics_list):
+    # Cria uma nova apresentação
+    prs = Presentation()
+
+    # Configura o tamanho do slide para 25,4 cm x 19,05 cm (4:3)
+    prs.slide_width = Inches(10)  # 25,4 cm = 10 inches
+    prs.slide_height = Inches(7.5)  # 19,05 cm = 7.5 inches
+
+    for lyric in tqdm(lyrics_list, total=len(lyrics_list), desc="Montando apresentação"):
+        slides = split_lyric_into_slides(lyric)
+        for part in slides:
+            # Adiciona um slide branco (layout [6])
+            slide_layout = prs.slide_layouts[6]  # Slide branco
+            slide = prs.slides.add_slide(slide_layout)
+
+            # Adiciona uma caixa de texto centralizada
+            left = top = Inches(0)  # Margens 0 cm
+            width = prs.slide_width
+            height = prs.slide_height
+
+            textbox = slide.shapes.add_textbox(left, top, width, height)
+            text_frame = textbox.text_frame
+            text_frame.word_wrap = True
+            text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE  # Centralizado verticalmente
+
+            # Divide a letra onde há " | " e adiciona cada parte como um parágrafo separado
+            lyrics_lines = [line.strip() for line in part.split("|") if line.strip()]
+
+            if lyrics_lines:
+                # Define o primeiro parágrafo diretamente no `text_frame.text` para evitar a linha vazia
+                text_frame.text = lyrics_lines[0].upper()
+                p = text_frame.paragraphs[0]
+                p.font.size = Pt(36)  # Fonte tamanho 36pt
+                p.font.name = 'Arial'
+                p.alignment = PP_ALIGN.CENTER
+
+                # Adiciona os parágrafos seguintes
+                for line in lyrics_lines[1:]:
+                    p = text_frame.add_paragraph()
+                    p.text = line.upper()  # Coloca o texto em maiúsculas
+                    p.font.size = Pt(36)  # Fonte tamanho 36pt
+                    p.font.name = 'Arial'
+                    p.alignment = PP_ALIGN.CENTER  # Centralizado horizontalmente
+
+    # Salva a apresentação
+    prs.save('apresentacao_letras.pptx')
 
 if __name__ == '__main__':
-    playlist = get_playlist()
-    find_lyrics_on_vagalume(playlist)
-
+    lyrics_list = get_lyrics()
+    create_presentation_with_format(lyrics_list)
