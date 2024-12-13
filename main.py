@@ -1,4 +1,3 @@
-import requests, os
 import csv
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -13,8 +12,6 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 
-api_key_vagalume = os.getenv("KEY_VAGALUME")
-
 def get_lyrics():
 
     lyrics_list = []
@@ -27,15 +24,11 @@ def get_lyrics():
             if local_lyric:
                 lyrics_list.append(local_lyric)
             else:
-                api_lyric = get_lyrics_on_vagalume_api(music, artist)
-                if api_lyric:
-                    lyrics_list.append(api_lyric)
+                scrapping_lyric = get_lyric_by_scraping(music, artist)
+                if scrapping_lyric:
+                    lyrics_list.append(scrapping_lyric)
                 else:
-                    scrapping_lyric = get_lyric_by_scraping(music, artist)
-                    if scrapping_lyric:
-                        lyrics_list.append(scrapping_lyric)
-                    else:
-                        lyrics_list.append(f'Música {music} do artista {artist} não encontrada')
+                    lyrics_list.append(f'Música {music} do artista {artist} não encontrada')
     return lyrics_list
 
 def get_lyric_local(music, artist):
@@ -44,22 +37,6 @@ def get_lyric_local(music, artist):
             music_name, artist_name, lyric = line.split(';')
             if music == music_name and artist == artist_name:
                 return lyric
-
-def get_lyrics_on_vagalume_api(music, artist):
-    url = f"https://api.vagalume.com.br/search.php?art={artist}&mus={music}&apikey={api_key_vagalume}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        # print(data)
-        if 'mus' in data:
-            lyric = data['mus'][0]['text']
-            formated_lyric = lyric.replace('\n', ' | ')
-            with open("lista_com_id.csv", "a", newline='') as local_list:
-                writer = csv.writer(local_list, delimiter=';')
-                row = [music, artist, formated_lyric]
-                writer.writerow(row)
-            return formated_lyric
-    return None
 
 def get_lyric_by_scraping(music_name, artist):
     chrome_options = Options()
@@ -100,7 +77,7 @@ def get_lyric_by_scraping(music_name, artist):
             return f"Error:{str(e)}"
 
 # Função para dividir o texto em múltiplos slides de até 300 caracteres por slide
-def split_lyric_into_slides(lyrics, max_chars=300):
+def split_lyric_into_slides(lyrics, max_chars=250):
     slides = []
     current_slide = ""
     words = lyrics.split()
